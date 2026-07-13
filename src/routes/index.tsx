@@ -163,9 +163,8 @@ function Index() {
           </Button>
           <Button
             variant="default"
-            className={btnClass}
+            className={`${btnClass} row-span-2`}
             onClick={handleEquals}
-            row-span={2}
           >
             =
           </Button>
