@@ -1,0 +1,61 @@
+name: "CodeQL Security Scan"
+
+# ---------------------------------------------------------------------------
+# Deterministic SAST. Runs as a REQUIRED check on the develop -> main PR,
+# plus a weekly scheduled full scan.
+#
+# GATING: CodeQL uploads results to the Security tab and reports a PR check.
+# By default that check can PASS even when alerts exist. To make it a real
+# gate, set the code-scanning "Check Failure" severity threshold in:
+#   Settings > Code security > Code scanning > "Check Failures"  (High or higher)
+# See PIPELINE-SETUP.md, Part 5.
+#
+# PREREQUISITE (private repos): enable GitHub Code Security on the repo.
+# For the TEST environment you can instead use a PUBLIC repo with dummy code,
+# where CodeQL is free (see PIPELINE-SETUP.md, Part 5, cost note).
+# ---------------------------------------------------------------------------
+
+on:
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "0 6 * * 1" # weekly full scan, Mondays 06:00 UTC
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+      packages: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

@@ -1,0 +1,65 @@
+name: "Promote develop to main"
+
+# ---------------------------------------------------------------------------
+# On every push to develop (i.e. every change Lovable syncs), ensure there is an
+# open PR from develop -> main and turn on auto-merge. The security scans
+# run as REQUIRED checks on that PR, so auto-merge only completes when they are
+# green. Netlify deploys from the main branch, so nothing reaches the live
+# site until the gate passes.
+#
+# WHY A PAT (AUTOMATION_TOKEN) INSTEAD OF THE DEFAULT GITHUB TOKEN:
+# GitHub deliberately does NOT trigger new workflow runs from events created by
+# the built-in GITHUB_TOKEN (anti-recursion). A PR opened with GITHUB_TOKEN would
+# therefore NOT start the CodeQL / Claude scan workflows. Opening the PR with a
+# Personal Access Token makes the scans run. See PIPELINE-SETUP.md, Part 4.
+# ---------------------------------------------------------------------------
+
+on:
+  push:
+    branches: ["develop"]
+
+concurrency:
+  group: promote-develop
+  cancel-in-progress: false # let every push settle into the open PR
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  open-or-update-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure PR develop -> main and enable auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Is there already an open PR from develop -> main?
+          PR=$(gh pr list --head develop --base main --state open \
+                 --json number -q '.[0].number' || true)
+
+          if [ -z "${PR:-}" ]; then
+            echo "No open promotion PR found. Creating one."
+            gh pr create \
+              --base main \
+              --head develop \
+              --title "Deploy: promote develop to main" \
+              --body "Automated promotion PR. Merges automatically once CodeQL and the Claude security review pass. Do not merge manually."
+            PR=$(gh pr list --head develop --base main --state open \
+                   --json number -q '.[0].number')
+          else
+            echo "Promotion PR #$PR already open; it will pick up the new commit."
+          fi
+
+          # Enable auto-merge (merge commit, so main stays a superset of develop).
+          # This only merges once ALL required status checks are green.
+          gh pr merge "$PR" --auto --merge || \
+            echo "Auto-merge already enabled or not yet mergeable; continuing."
