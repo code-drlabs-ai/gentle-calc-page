@@ -1,0 +1,67 @@
+name: "Claude Security Review"
+
+# ---------------------------------------------------------------------------
+# Semantic / business-logic security review by Claude. Runs as a REQUIRED
+# check on the develop -> main PR. Complements CodeQL: catches auth-logic
+# flaws and intent-level issues that pattern-based SAST cannot see.
+#
+# PREREQUISITE: repo secret CLAUDE_API_KEY (Anthropic Console), enabled for
+# BOTH "Claude API" AND "Claude Code" usage. Set a spend cap on the key.
+#
+# SAFETY: uses `pull_request` (not pull_request_target); secrets are never
+# exposed to fork code. Only trusted PRs (yours, from develop) are reviewed.
+# ---------------------------------------------------------------------------
+
+on:
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: claude-sec-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  security-review:
+    name: Claude semantic security review
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+
+      - name: Run Claude security review
+        uses: anthropics/claude-code-security-review@develop
+        with:
+          claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
+          comment-pr: true
+          claude-model: claude-sonnet-5
+          exclude-directories: "node_modules,dist,build,.vite,coverage"
+
+      # ---- OPTIONAL HARD GATE -------------------------------------------------
+      # By default this job passes as long as the review RUNS (findings are
+      # posted as PR comments = advisory). To BLOCK the merge on serious
+      # findings, uncomment the step below. It reads the results file the action
+      # writes and fails the job if any High/Critical finding is present.
+      # NOTE: confirm the results filename/schema against the action's current
+      # README before relying on this in main.
+      #
+      # - name: Block on High/Critical findings
+      #   if: always()
+      #   run: |
+      #     set -euo pipefail
+      #     FILE="claudecode-results.json"
+      #     if [ ! -f "$FILE" ]; then echo "No results file; skipping gate."; exit 0; fi
+      #     COUNT=$(jq '[.findings[]? | select(.severity=="high" or .severity=="critical")] | length' "$FILE")
+      #     echo "High/Critical findings: $COUNT"
+      #     if [ "$COUNT" -gt 0 ]; then
+      #       echo "::error::Blocking merge: $COUNT high/critical security finding(s)."
+      #       exit 1
+      #     fi
+      # -------------------------------------------------------------------------
