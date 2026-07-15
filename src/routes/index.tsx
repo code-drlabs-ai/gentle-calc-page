@@ -98,7 +98,8 @@ function Index() {
     setResetNext(true);
   };
 
-  const btnClass = "h-14 text-lg font-semibold";
+  const btnClass =
+    "h-14 text-lg font-semibold bg-green-600 hover:bg-green-700 text-white border-green-700";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
