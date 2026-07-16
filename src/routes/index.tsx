@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/lib/auth";
+import { useCalculationHistory } from "@/hooks/use-calculation-history";
 
 // No head() here: the home route inherits title/description/og/twitter from
 // __root.tsx, and ships no og:image so serve-time hosting can inject the
@@ -14,6 +16,8 @@ function Index() {
   const [previous, setPrevious] = useState<string | null>(null);
   const [operation, setOperation] = useState<string | null>(null);
   const [resetNext, setResetNext] = useState(false);
+  const { isAuthenticated, user, logout } = useAuth();
+  const { enabled: historyEnabled, history, save } = useCalculationHistory();
 
   const clear = () => {
     setDisplay("0");
@@ -96,13 +100,28 @@ function Index() {
     setPrevious(null);
     setOperation(null);
     setResetNext(true);
+
+    if (historyEnabled) {
+      // Fire-and-forget: a failed write must not block the calculator. The error surfaces
+      // via save.isError below rather than throwing into the click handler.
+      save.mutate({ expression: `${previous} ${operation} ${current}`, result: String(result) });
+    }
   };
 
   const btnClass =
     "h-14 text-lg font-semibold bg-green-600 hover:bg-green-700 text-white border-green-700";
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background p-4">
+      {isAuthenticated && (
+        <div className="flex w-full max-w-xs items-center justify-between gap-2 text-sm">
+          <span className="truncate text-muted-foreground">{user?.email ?? user?.name}</span>
+          <Button variant="ghost" size="sm" onClick={logout}>
+            Sign out
+          </Button>
+        </div>
+      )}
+
       <div className="w-full max-w-xs rounded-2xl border border-border bg-card p-5 shadow-lg">
         <div className="mb-4 rounded-xl bg-muted p-4 text-right">
           <div className="text-sm text-muted-foreground h-5">
@@ -162,11 +181,7 @@ function Index() {
           <Button variant="secondary" className={btnClass} onClick={() => appendDigit("3")}>
             3
           </Button>
-          <Button
-            variant="default"
-            className={`${btnClass} row-span-2`}
-            onClick={handleEquals}
-          >
+          <Button variant="default" className={`${btnClass} row-span-2`} onClick={handleEquals}>
             =
           </Button>
 
@@ -182,6 +197,35 @@ function Index() {
           </Button>
         </div>
       </div>
+
+      {historyEnabled && (
+        <div className="w-full max-w-xs rounded-2xl border border-border bg-card p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold text-card-foreground">Recent</h2>
+
+          {save.isError && (
+            <p className="text-xs text-destructive">Couldn't save your last calculation.</p>
+          )}
+
+          {history.isPending && <p className="text-xs text-muted-foreground">Loading…</p>}
+
+          {history.isError && (
+            <p className="text-xs text-destructive">Couldn't load your history.</p>
+          )}
+
+          {history.data?.length === 0 && (
+            <p className="text-xs text-muted-foreground">Nothing yet.</p>
+          )}
+
+          <ul className="space-y-1">
+            {history.data?.map((row) => (
+              <li key={row.id} className="flex justify-between gap-2 text-xs">
+                <span className="truncate text-muted-foreground">{row.expression}</span>
+                <span className="font-medium text-card-foreground">{row.result}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

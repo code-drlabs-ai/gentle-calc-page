@@ -6,8 +6,12 @@ name: "CodeQL Security Scan"
 #
 # GATING: CodeQL uploads results to the Security tab and reports a PR check.
 # By default that check can PASS even when alerts exist. To make it a real
-# gate, set the code-scanning "Check Failure" severity threshold in:
-#   Settings > Code security > Code scanning > "Check Failures"  (High or higher)
+# gate you MUST do BOTH:
+#   1. Set the code-scanning "Check Failure" severity threshold to High or
+#      higher:  Settings > Code security > Code scanning > "Check Failures".
+#   2. Add "CodeQL" to the branch protection required checks on main, so the
+#      promotion auto-merge waits for it.
+# Without step 2 the promote.yml auto-merge does not wait for this scan.
 # See PIPELINE-SETUP.md, Part 5.
 #
 # PREREQUISITE (private repos): enable GitHub Code Security on the repo.

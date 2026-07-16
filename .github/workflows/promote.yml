@@ -4,8 +4,8 @@ name: "Promote develop to main"
 # On every push to develop (i.e. every change Lovable syncs), ensure there is an
 # open PR from develop -> main and turn on auto-merge. The security scans
 # run as REQUIRED checks on that PR, so auto-merge only completes when they are
-# green. Netlify deploys from the main branch, so nothing reaches the live
-# site until the gate passes.
+# green. The Azure Static Web Apps deploy (deploy-azure-swa.yml) triggers on
+# push to main, so nothing reaches a live environment until the gate passes.
 #
 # WHY A PAT (AUTOMATION_TOKEN) INSTEAD OF THE DEFAULT GITHUB TOKEN:
 # GitHub deliberately does NOT trigger new workflow runs from events created by
