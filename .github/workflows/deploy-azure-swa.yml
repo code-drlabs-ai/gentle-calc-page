@@ -1,0 +1,96 @@
+name: "Deploy to Azure Static Web Apps"
+
+# ---------------------------------------------------------------------------
+# Runs AFTER promote.yml has merged develop -> main (i.e. after CodeQL and the
+# Claude security review passed as required checks). Builds the static SPA once
+# per environment — so each bundle compiles in its OWN Auth0/Supabase config and
+# VITE_APP_ENV — then publishes to Azure Static Web Apps.
+#
+# Promotion path: main -> SIT (automatic) -> UAT (manual approval) ->
+# Production (manual approval). The approvals are enforced by GitHub Environment
+# protection rules, NOT by this file; see PIPELINE-SETUP.md, Part 8. A job named
+# for an environment cannot start until that environment's required reviewers
+# approve, so UAT/Prod never deploy on an unattended push.
+#
+# SECURITY:
+#  - Third-party and first-party actions are pinned to a full commit SHA. A
+#    moving tag (@v1) could be repointed at malicious code by a compromised
+#    action repo; a SHA cannot.
+#  - The Azure deployment token is a per-environment secret and is the ONLY
+#    secret this workflow can see for a given job. It is scoped to one SWA
+#    resource. OIDC is the stronger alternative and is documented as the
+#    hardening upgrade in PIPELINE-SETUP.md, Part 8.
+#  - The default GITHUB_TOKEN is read-only here; deploys carry no write scope
+#    to the repo.
+# ---------------------------------------------------------------------------
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch: {}
+
+concurrency:
+  # Never run two deploys of the same commit at once; do not cancel an in-flight
+  # deploy (cancelling mid-publish can leave an environment half-updated).
+  group: deploy-swa-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-sit:
+    name: Deploy to SIT
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: sit
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: ./.github/actions/build-and-deploy-swa
+        with:
+          app-env: sit
+          auth0-domain: ${{ vars.VITE_AUTH0_DOMAIN }}
+          auth0-client-id: ${{ vars.VITE_AUTH0_CLIENT_ID }}
+          auth0-audience: ${{ vars.VITE_AUTH0_AUDIENCE }}
+          supabase-url: ${{ vars.VITE_SUPABASE_URL }}
+          supabase-anon-key: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          swa-token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+
+  deploy-uat:
+    name: Deploy to UAT
+    needs: deploy-sit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: uat # requires reviewer approval (configured in repo settings)
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: ./.github/actions/build-and-deploy-swa
+        with:
+          app-env: uat
+          auth0-domain: ${{ vars.VITE_AUTH0_DOMAIN }}
+          auth0-client-id: ${{ vars.VITE_AUTH0_CLIENT_ID }}
+          auth0-audience: ${{ vars.VITE_AUTH0_AUDIENCE }}
+          supabase-url: ${{ vars.VITE_SUPABASE_URL }}
+          supabase-anon-key: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          swa-token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+
+  deploy-production:
+    name: Deploy to Production
+    needs: deploy-uat
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production # requires reviewer approval (configured in repo settings)
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: ./.github/actions/build-and-deploy-swa
+        with:
+          app-env: production
+          auth0-domain: ${{ vars.VITE_AUTH0_DOMAIN }}
+          auth0-client-id: ${{ vars.VITE_AUTH0_CLIENT_ID }}
+          auth0-audience: ${{ vars.VITE_AUTH0_AUDIENCE }}
+          supabase-url: ${{ vars.VITE_SUPABASE_URL }}
+          supabase-anon-key: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          swa-token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}

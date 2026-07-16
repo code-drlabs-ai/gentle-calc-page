@@ -1,0 +1,90 @@
+name: "Build and deploy to Azure Static Web Apps"
+description: >-
+  Builds the static SPA with the given environment's Auth0/Supabase config compiled in,
+  generates the per-environment staticwebapp.config.json (CSP + security headers), and
+  publishes the prebuilt output to Azure Static Web Apps.
+
+inputs:
+  app-env:
+    description: "VITE_APP_ENV — one of sit | uat | production."
+    required: true
+  auth0-domain:
+    description: "Auth0 tenant custom domain (host only)."
+    required: true
+  auth0-client-id:
+    description: "Auth0 SPA client id."
+    required: true
+  auth0-audience:
+    description: "Auth0 API identifier / token audience."
+    required: true
+  supabase-url:
+    description: "Supabase project URL."
+    required: true
+  supabase-anon-key:
+    description: "Supabase anon (public) key."
+    required: true
+  swa-token:
+    description: "Azure Static Web Apps deployment token for this environment."
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Fail fast if required config is missing
+      shell: bash
+      run: |
+        set -euo pipefail
+        # The Vite build also enforces this, but checking here yields a clear error
+        # naming the missing GitHub Environment variable rather than a build stack trace.
+        missing=0
+        for name in APP_ENV AUTH0_DOMAIN AUTH0_CLIENT_ID AUTH0_AUDIENCE SUPABASE_URL SUPABASE_ANON_KEY SWA_TOKEN; do
+          eval "val=\${IN_$name:-}"
+          if [ -z "${val:-}" ]; then
+            echo "::error::Missing required input/secret for env '${IN_APP_ENV:-?}': $name"
+            missing=1
+          fi
+        done
+        [ "$missing" -eq 0 ] || exit 1
+      env:
+        IN_APP_ENV: ${{ inputs.app-env }}
+        IN_AUTH0_DOMAIN: ${{ inputs.auth0-domain }}
+        IN_AUTH0_CLIENT_ID: ${{ inputs.auth0-client-id }}
+        IN_AUTH0_AUDIENCE: ${{ inputs.auth0-audience }}
+        IN_SUPABASE_URL: ${{ inputs.supabase-url }}
+        IN_SUPABASE_ANON_KEY: ${{ inputs.supabase-anon-key }}
+        IN_SWA_TOKEN: ${{ inputs.swa-token }}
+
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: "22"
+        cache: "npm"
+
+    - name: Install dependencies
+      shell: bash
+      # npm ci fails the build if package-lock.json is out of sync — a supply-chain guard.
+      run: npm ci
+
+    - name: Build (static SPA) + generate SWA config
+      shell: bash
+      run: npm run build:swa
+      env:
+        VITE_APP_ENV: ${{ inputs.app-env }}
+        VITE_AUTH0_DOMAIN: ${{ inputs.auth0-domain }}
+        VITE_AUTH0_CLIENT_ID: ${{ inputs.auth0-client-id }}
+        VITE_AUTH0_AUDIENCE: ${{ inputs.auth0-audience }}
+        VITE_SUPABASE_URL: ${{ inputs.supabase-url }}
+        VITE_SUPABASE_ANON_KEY: ${{ inputs.supabase-anon-key }}
+
+    - name: Deploy to Azure Static Web Apps
+      uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
+      with:
+        azure_static_web_apps_api_token: ${{ inputs.swa-token }}
+        action: "upload"
+        # We already built; do not let Oryx rebuild. It would run without our env
+        # gate and could publish an unvalidated bundle.
+        skip_app_build: true
+        skip_api_build: true
+        app_location: "dist/client"
+        # No managed API: Auth0 and Supabase are called directly from the browser.
+        api_location: ""
+        output_location: ""

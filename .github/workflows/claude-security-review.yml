@@ -44,24 +44,38 @@ jobs:
           claude-model: claude-sonnet-5
           exclude-directories: "node_modules,dist,build,.vite,coverage"
 
-      # ---- OPTIONAL HARD GATE -------------------------------------------------
-      # By default this job passes as long as the review RUNS (findings are
-      # posted as PR comments = advisory). To BLOCK the merge on serious
-      # findings, uncomment the step below. It reads the results file the action
-      # writes and fails the job if any High/Critical finding is present.
-      # NOTE: confirm the results filename/schema against the action's current
-      # README before relying on this in main.
+      # ---- HARD GATE ----------------------------------------------------------
+      # Fail the PR check when the review reports any High/Critical finding, so the
+      # promotion auto-merge cannot complete. This is intentionally strict: for a
+      # citizen-developer pipeline where code arrives unreviewed from Lovable, a
+      # serious finding must stop the deploy rather than merely comment on it.
       #
-      # - name: Block on High/Critical findings
-      #   if: always()
-      #   run: |
-      #     set -euo pipefail
-      #     FILE="claudecode-results.json"
-      #     if [ ! -f "$FILE" ]; then echo "No results file; skipping gate."; exit 0; fi
-      #     COUNT=$(jq '[.findings[]? | select(.severity=="high" or .severity=="critical")] | length' "$FILE")
-      #     echo "High/Critical findings: $COUNT"
-      #     if [ "$COUNT" -gt 0 ]; then
-      #       echo "::error::Blocking merge: $COUNT high/critical security finding(s)."
-      #       exit 1
-      #     fi
+      # The action writes its findings to a JSON file; the exact name has changed
+      # across releases, so we locate it rather than hard-code it. If NO results
+      # file is produced, we FAIL CLOSED — a silently-missing report must not be
+      # read as "no findings".
+      - name: Block on High/Critical findings
+        if: always()
+        run: |
+          set -euo pipefail
+
+          FILE="$(find . -maxdepth 3 -type f \
+                    \( -name 'claudecode-results.json' -o -name '*claude*results*.json' \) \
+                    2>/dev/null | head -n1 || true)"
+
+          if [ -z "${FILE:-}" ]; then
+            echo "::error::Security review produced no results file; failing closed."
+            exit 1
+          fi
+          echo "Reading findings from: $FILE"
+
+          COUNT=$(jq '[.findings[]?
+                        | select((.severity // "" | ascii_downcase) as $s
+                                 | $s == "high" or $s == "critical")] | length' "$FILE")
+          echo "High/Critical findings: $COUNT"
+
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::Blocking merge: $COUNT high/critical security finding(s). See PR comments."
+            exit 1
+          fi
       # -------------------------------------------------------------------------
