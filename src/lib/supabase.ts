@@ -3,17 +3,20 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { supabaseConfig } from "./env";
 
 /**
- * Supabase client wired to Auth0 via Supabase Third-Party Auth.
+ * REST client for our SELF-HOSTED PostgREST (there is no managed Supabase, and no GoTrue).
  *
- * Supabase is configured to trust our Auth0 tenant as an OIDC issuer and validates the
- * token against Auth0's JWKS. That means the Auth0 access token IS the database
- * credential, RLS reads the caller identity from `auth.jwt() ->> 'sub'`, and there is no
- * shared JWT secret and no custom server in the path — see supabase/migrations and
- * PIPELINE-SETUP.md, Part 7.
+ * `supabase-js` is used purely as a typed PostgREST client. `VITE_SUPABASE_URL` is the
+ * Front Door hostname; supabase-js calls `<url>/rest/v1/<table>`, Front Door routes
+ * `/rest/v1/*` to the PostgREST Container App (stripping the prefix), and PostgREST
+ * validates the bearer token against Auth0's JWKS directly. So the Auth0 access token IS
+ * the database credential, RLS reads the caller from `auth.jwt_sub()`, and no custom
+ * server and no shared JWT secret sit in the path — see db/bootstrap, supabase/migrations,
+ * postgrest/README.md, and PIPELINE-SETUP.md.
  *
- * The anon key compiled into this bundle is public by design: it grants nothing on its own
- * because every table is RLS default-deny. The service_role key must NEVER appear here —
- * it bypasses RLS entirely and belongs only in server-side automation.
+ * `VITE_SUPABASE_ANON_KEY` is only here because supabase-js requires an `apikey`. PostgREST
+ * ignores that header (it authorizes on the Auth0 bearer alone), so the value is a
+ * non-secret placeholder, not a credential. The Postgres `service_role` must NEVER appear
+ * in this bundle or on any request-path container — it bypasses RLS.
  */
 
 export type Database = {
