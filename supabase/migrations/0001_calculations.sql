@@ -1,76 +1,69 @@
 -- Per-user calculation history.
 --
--- Identity model: authentication is Auth0, not Supabase Auth. Supabase is configured to
--- trust the Auth0 tenant as a third-party OIDC issuer (see PIPELINE-SETUP.md, Part 7) and
--- validates each request's bearer token against Auth0's JWKS. The caller's identity is
--- therefore the Auth0 subject, read as `auth.jwt() ->> 'sub'`.
+-- Identity is Auth0 (PKCE). PostgREST validates each request's Auth0 access token against
+-- Auth0's JWKS and exposes the claims via the helpers created in db/bootstrap/000_bootstrap.sql.
+-- The caller is `auth.jwt_sub()` (the Auth0 subject, TEXT — an Auth0 sub is not a uuid).
 --
--- Why not auth.uid(): auth.uid() casts the `sub` claim to uuid. Auth0 subjects look like
--- `auth0|65f...` or `google-oauth2|1027...`, which are not uuids, so auth.uid() errors or
--- returns null. The subject is stored as text and compared as text throughout.
---
--- PREREQUISITE: the Auth0 access token must carry `role: authenticated`, added by a Login
--- Action in the Auth0 tenant. Without it Supabase treats the caller as `anon`, every policy
--- below fails closed, and the app sees empty history rather than someone else's data.
+-- This migration follows the six hardening moves in PIPELINE-SETUP.md:
+--   #1 deny-by-default (grants are explicit and minimal, below)
+--   #2 RLS enabled AND forced
+--   #4 column-level grants (client may write only expression/result)
+--   #5 server-authoritative ownership (user_id defaults from the token, re-checked)
+-- History is append-only: no UPDATE or DELETE grant, and no UPDATE/DELETE policy.
 
 create extension if not exists "pgcrypto";
 
 create table if not exists public.calculations (
   id uuid primary key default gen_random_uuid(),
-  -- Defaulted from the verified token, never from client input. An INSERT that omits
-  -- user_id is attributed to the caller; one that forges it is rejected by the WITH CHECK
-  -- on the insert policy below.
-  user_id text not null default (auth.jwt() ->> 'sub'),
+  -- Defaulted from the verified token, never from client input.
+  user_id text not null default auth.jwt_sub(),
   expression text not null,
   result text not null,
   created_at timestamptz not null default now(),
 
-  -- Bound the columns so a compromised or buggy client cannot write unbounded blobs.
   constraint calculations_expression_length check (char_length(expression) between 1 and 200),
   constraint calculations_result_length check (char_length(result) between 1 and 100),
   constraint calculations_user_id_not_blank check (char_length(user_id) > 0)
 );
 
--- History is read newest-first, scoped to one user.
 create index if not exists calculations_user_id_created_at_idx
   on public.calculations (user_id, created_at desc);
 
 -- ---------------------------------------------------------------------------
--- Row Level Security
+-- #2 RLS: enable AND force. `force` matters — without it the table owner bypasses
+-- RLS, which is the self-hosted footgun that fails OPEN. rls_gate.sql checks for it.
 -- ---------------------------------------------------------------------------
--- The anon key is embedded in a public browser bundle, so RLS is the ONLY thing standing
--- between the internet and this table. Default deny: enabling RLS with no matching policy
--- rejects every row.
 alter table public.calculations enable row level security;
-
--- FORCE applies RLS to the table owner too, so a future SECURITY DEFINER function or an
--- owner-context connection cannot accidentally bypass these policies.
 alter table public.calculations force row level security;
 
--- Start from zero: revoke the blanket grants PostgREST roles inherit from the public schema.
-revoke all on public.calculations from anon, authenticated;
+-- ---------------------------------------------------------------------------
+-- #1 + #4 Grants: explicit, minimal, column-scoped. anon gets nothing.
+-- The table is inert until these lines run — that is the review gate.
+-- ---------------------------------------------------------------------------
+revoke all on public.calculations from anon, authenticated, public;
 
--- Signed-in users may read and append; no UPDATE or DELETE grant is issued, which makes the
--- history append-only at the privilege level as well as the policy level.
-grant select, insert on public.calculations to authenticated;
+-- Read is row-scoped by the policy below. Write is restricted to two columns, so even a
+-- careless future policy cannot let a client set user_id/created_at/id directly.
+grant select on public.calculations to authenticated;
+grant insert (expression, result) on public.calculations to authenticated;
 
--- `anon` (a request with no valid Auth0 token) gets nothing at all.
-
+-- ---------------------------------------------------------------------------
+-- Policies. #5 ownership is server-authoritative on both read and write.
+-- ---------------------------------------------------------------------------
 drop policy if exists "calculations_select_own" on public.calculations;
 create policy "calculations_select_own"
   on public.calculations
   for select
   to authenticated
-  using (user_id = auth.jwt() ->> 'sub');
+  using (user_id = auth.jwt_sub());
 
 drop policy if exists "calculations_insert_own" on public.calculations;
 create policy "calculations_insert_own"
   on public.calculations
   for insert
   to authenticated
-  -- Re-checks the defaulted value, so an explicit user_id in the request body cannot
-  -- attribute a row to another subject.
-  with check (user_id = auth.jwt() ->> 'sub');
+  -- Re-checks the token-defaulted value; an explicit user_id in the body can't forge it
+  -- (and the missing INSERT grant on user_id blocks setting it at all).
+  with check (user_id = auth.jwt_sub());
 
--- No UPDATE or DELETE policies are defined. With RLS enabled and no policy, those
--- statements match zero rows regardless of the grants above.
+-- No UPDATE/DELETE policy and no UPDATE/DELETE grant: history is append-only.

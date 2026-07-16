@@ -48,10 +48,8 @@ async function inlineScriptHashes(shellPath) {
 }
 
 function buildCsp({ scriptHashes, auth0Origin, supabaseOrigin }) {
+  // supabaseOrigin here is the Front Door hostname that fronts PostgREST for this env.
   const connect = ["'self'", auth0Origin, supabaseOrigin].filter(Boolean);
-
-  // Supabase Realtime uses a WebSocket on the same host.
-  if (supabaseOrigin) connect.push(supabaseOrigin.replace(/^https:/, "wss:"));
 
   return [
     "default-src 'self'",

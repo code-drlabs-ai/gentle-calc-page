@@ -54,6 +54,18 @@ runs:
         IN_SUPABASE_ANON_KEY: ${{ inputs.supabase-anon-key }}
         IN_SWA_TOKEN: ${{ inputs.swa-token }}
 
+    - name: Fail if a Lovable Cloud / managed-Supabase endpoint leaked into source
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Lovable periodically rewrites client config back to its own Cloud settings. If a
+        # supabase.co or lovable endpoint is hard-coded in src/, the build would talk to the
+        # wrong backend. Our client reads VITE_* env only, so any such string is a red flag.
+        if grep -rIn --exclude-dir=node_modules -e 'supabase\.co' -e 'lovableproject\.com' -e 'lovable\.app' src/ ; then
+          echo "::error::A Lovable Cloud / managed-Supabase endpoint is hard-coded in src/. Backend must come from VITE_* env only."
+          exit 1
+        fi
+
     - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: "22"

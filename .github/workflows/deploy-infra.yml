@@ -1,0 +1,75 @@
+name: "Provision Azure infrastructure (Bicep)"
+
+# ---------------------------------------------------------------------------
+# Provisions/updates the per-environment Azure stack (VNet, private Postgres Flex,
+# Container Apps + PostgREST, Static Web App, Front Door + WAF) from infra/bicep.
+#
+# Runs on demand only — infrastructure changes are deliberate, not every-push. The
+# target environment's GitHub Environment protection (required reviewers) gates it.
+#
+# AUTH: OIDC (azure/login with a federated credential). NO standing Azure secret — the
+# workflow requests a short-lived token via `id-token: write`. Configure a federated
+# credential per environment scoped to this repo + environment. See PIPELINE-SETUP.md.
+#
+# SECRETS consumed (as GitHub Environment secrets, injected into readEnvironmentVariable
+# at bicep build): PG_ADMIN_PASSWORD, PG_AUTHENTICATOR_PASSWORD, AUTH0_JWKS. Plus the
+# environment variable AUTH0_AUDIENCE.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: ["sit", "uat", "prod"]
+
+concurrency:
+  group: infra-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # OIDC federated login
+  contents: read
+
+jobs:
+  provision:
+    name: Provision ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: ${{ inputs.environment }} # required reviewers gate this
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Azure login (OIDC)
+        uses: Azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: What-if (preview changes)
+        env:
+          PG_ADMIN_PASSWORD: ${{ secrets.PG_ADMIN_PASSWORD }}
+          PG_AUTHENTICATOR_PASSWORD: ${{ secrets.PG_AUTHENTICATOR_PASSWORD }}
+          AUTH0_JWKS: ${{ secrets.AUTH0_JWKS }}
+          AUTH0_AUDIENCE: ${{ vars.VITE_AUTH0_AUDIENCE }}
+        run: |
+          az deployment group what-if \
+            --resource-group "rg-gentlecalc-${{ inputs.environment }}" \
+            --template-file infra/bicep/main.bicep \
+            --parameters "infra/bicep/env/${{ inputs.environment }}.bicepparam"
+
+      - name: Deploy
+        env:
+          PG_ADMIN_PASSWORD: ${{ secrets.PG_ADMIN_PASSWORD }}
+          PG_AUTHENTICATOR_PASSWORD: ${{ secrets.PG_AUTHENTICATOR_PASSWORD }}
+          AUTH0_JWKS: ${{ secrets.AUTH0_JWKS }}
+          AUTH0_AUDIENCE: ${{ vars.VITE_AUTH0_AUDIENCE }}
+        run: |
+          az deployment group create \
+            --resource-group "rg-gentlecalc-${{ inputs.environment }}" \
+            --template-file infra/bicep/main.bicep \
+            --parameters "infra/bicep/env/${{ inputs.environment }}.bicepparam"

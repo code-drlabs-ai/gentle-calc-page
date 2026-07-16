@@ -1,0 +1,76 @@
+name: "Apply DB migrations + RLS gate"
+
+# ---------------------------------------------------------------------------
+# Applies supabase/migrations/*.sql to an environment's Postgres, then runs the RLS gate.
+# The gate MUST pass before the app is allowed to serve — a table without RLS is a data
+# leak, so this workflow is a required predecessor of the app deploy.
+#
+# NETWORK REALITY (do not skip): the Postgres Flexible Server has publicNetworkAccess
+# Disabled — it is reachable ONLY from inside the VNet. A GitHub-hosted runner CANNOT
+# reach it. You must run this job on ONE of:
+#   (a) a self-hosted runner deployed into the VNet (recommended; set `runs-on` to its
+#       label), or
+#   (b) an `az containerapp job` in the Container Apps environment (already in the VNet).
+# The job below is written for (a). It will hang/timeout on a GitHub-hosted runner by
+# design — that is safer than quietly exposing the DB to run CI against it.
+#
+# The bootstrap (db/bootstrap/000_bootstrap.sql) is applied ONCE per server, by hand,
+# before the first migration — it is NOT part of this workflow (it needs admin, and it
+# creates the roles this pipeline relies on). See PIPELINE-SETUP.md.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: ["sit", "uat", "prod"]
+
+concurrency:
+  group: db-migrate-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: Migrate ${{ inputs.environment }}
+    # Replace with your VNet-integrated self-hosted runner label. `ubuntu-latest` cannot
+    # reach the private Postgres endpoint and is left here only as a visible placeholder.
+    runs-on: [self-hosted, vnet, "${{ inputs.environment }}"]
+    timeout-minutes: 20
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Install psql client
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y postgresql-client
+          fi
+
+      - name: Apply migrations (ordered)
+        env:
+          # Admin/owner URL — migrations create tables and grants. Private FQDN, TLS required.
+          PGSSLMODE: require
+          ADMIN_DB_URL: ${{ secrets.ADMIN_DB_URL }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            echo "── applying $f"
+            psql "$ADMIN_DB_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: RLS gate (fails the pipeline on any unguarded table)
+        env:
+          PGSSLMODE: require
+          ADMIN_DB_URL: ${{ secrets.ADMIN_DB_URL }}
+        run: |
+          set -euo pipefail
+          psql "$ADMIN_DB_URL" -v ON_ERROR_STOP=1 -f db/checks/rls_gate.sql
