@@ -109,7 +109,7 @@ function Index() {
   };
 
   const btnClass =
-    "h-14 text-lg font-semibold bg-green-600 hover:bg-green-700 text-white border-green-700";
+    "h-14 text-lg font-semibold bg-blue-600 hover:bg-blue-700 text-white border-blue-700";
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background p-4">
