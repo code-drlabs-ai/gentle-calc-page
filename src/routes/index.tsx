@@ -17,7 +17,7 @@ function Index() {
   const [operation, setOperation] = useState<string | null>(null);
   const [resetNext, setResetNext] = useState(false);
   const { isAuthenticated, user, logout } = useAuth();
-  const { enabled: historyEnabled, history, save } = useCalculationHistory();
+  const { enabled: historyEnabled, history, save, clear: clearHistory } = useCalculationHistory();
 
   const clear = () => {
     setDisplay("0");
