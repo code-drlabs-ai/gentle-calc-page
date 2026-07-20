@@ -200,10 +200,27 @@ function Index() {
 
       {historyEnabled && (
         <div className="w-full max-w-xs rounded-2xl border border-border bg-card p-4 shadow-sm">
-          <h2 className="mb-2 text-sm font-semibold text-card-foreground">Recent</h2>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-card-foreground">Recent</h2>
+            {history.data && history.data.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => clearHistory.mutate()}
+                disabled={clearHistory.isPending}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
 
           {save.isError && (
             <p className="text-xs text-destructive">Couldn't save your last calculation.</p>
+          )}
+
+          {clearHistory.isError && (
+            <p className="text-xs text-destructive">Couldn't clear your history.</p>
           )}
 
           {history.isPending && <p className="text-xs text-muted-foreground">Loading…</p>}
