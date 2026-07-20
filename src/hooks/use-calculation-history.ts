@@ -47,5 +47,15 @@ export function useCalculationHistory() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   });
 
-  return { enabled, history, save };
+  const clear = useMutation({
+    mutationFn: async () => {
+      // RLS scopes the delete to the caller's own rows; the neq filter is required
+      // because PostgREST rejects an unfiltered DELETE.
+      const { error } = await supabase!.from("calculations").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  });
+
+  return { enabled, history, save, clear };
 }
