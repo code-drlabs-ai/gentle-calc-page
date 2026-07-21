@@ -28,7 +28,7 @@ param apiRateLimitPerMinute int = 600
 
 @description('Front Door SKU. Premium adds managed rules + private-link origins.')
 @allowed(['Standard_AzureFrontDoor', 'Premium_AzureFrontDoor'])
-param skuName string = 'Premium_AzureFrontDoor'
+param skuName string = 'Standard_AzureFrontDoor'
 
 var profileName = 'afd-gentlecalc-${env}'
 var endpointName = 'gentlecalc-${env}'

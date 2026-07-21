@@ -36,6 +36,14 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
         name: 'snet-infra'
         properties: {
           addressPrefix: infraSubnetPrefix
+          delegations: [
+            {
+              name: 'containerApps'
+              properties: {
+                serviceName: 'Microsoft.App/environments'
+              }
+            }
+          ]
         }
       }
       {

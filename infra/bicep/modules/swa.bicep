@@ -10,7 +10,7 @@ param env string
 
 @description('SKU: Free for throwaway, Standard for real environments.')
 @allowed(['Free', 'Standard'])
-param sku string = 'Standard'
+param sku string = 'Free'
 
 var swaName = 'swa-gentlecalc-${env}'
 
