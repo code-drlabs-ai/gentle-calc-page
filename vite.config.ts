@@ -44,8 +44,11 @@ export default defineConfig({
     server: { entry: "server" },
     // Ship a prerendered shell + client bundle. Azure Static Web Apps serves static assets only,
     // and Auth0 PKCE / Supabase are both browser-side, so no request-time server is needed.
-    spa: { enabled: true },
-    prerender: { enabled: true },
+    // Skip inside the Lovable sandbox: nitro owns the output layout there and the preview
+    // server plugin can't find the nitro-emitted entry (index.mjs vs. expected server.js),
+    // which makes prerender crawl `/` return 500 and fail the build.
+    spa: { enabled: !isLovableSandbox },
+    prerender: { enabled: !isLovableSandbox },
   },
   // `nitro: false` is checked BEFORE the wrapper's sandbox branch, so setting it unconditionally
   // would also disable Nitro inside Lovable and break the citizen developer's preview build.
