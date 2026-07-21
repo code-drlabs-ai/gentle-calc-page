@@ -107,7 +107,9 @@ module containerApp 'modules/containerapp.bicep' = {
     logAnalyticsCustomerId: logAnalytics.properties.customerId
     logAnalyticsSharedKey: logAnalytics.listKeys().primarySharedKey
     // authenticator connects over the private FQDN; sslmode=require enforced by the server.
-    pgrstDbUri: 'postgres://authenticator:${authenticatorPassword}@${postgres.outputs.serverFqdn}:5432/${postgres.outputs.databaseName}?sslmode=require'
+    // The password MUST be percent-encoded: base64 passwords contain / + = which otherwise
+    // corrupt the URI authority, making libpq drop the user ("could not look up local user ID 0").
+    pgrstDbUri: 'postgres://authenticator:${uriComponent(authenticatorPassword)}@${postgres.outputs.serverFqdn}:5432/${postgres.outputs.databaseName}?sslmode=require'
     auth0Jwks: auth0Jwks
     auth0Audience: auth0Audience
     postgrestImage: postgrestImage
