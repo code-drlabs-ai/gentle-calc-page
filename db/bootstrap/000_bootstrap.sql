@@ -51,12 +51,16 @@ begin
     create role service_role nologin noinherit bypassrls;
   end if;
   if not exists (select 1 from pg_roles where rolname = 'authenticator') then
-    execute format('create role authenticator login noinherit password %L', :'authenticator_pw');
-  else
-    -- Allow re-running to rotate the password.
-    execute format('alter role authenticator password %L', :'authenticator_pw');
+    create role authenticator login noinherit;
   end if;
 end $$;
+
+-- Set/rotate the authenticator login password. This MUST live OUTSIDE the do $$ ... $$ block
+-- above: psql interpolates :'authenticator_pw' in ordinary statements but NEVER inside a
+-- dollar-quoted string, so keeping it here is what makes the password actually substitute.
+-- Idempotent (safe to re-run to rotate). :'authenticator_pw' already emits a correctly quoted
+-- literal, so no format()/%L is needed.
+alter role authenticator password :'authenticator_pw';
 
 -- authenticator may become anon or authenticated based on the request's JWT role claim.
 -- It is DELIBERATELY NOT granted service_role: in Phase 1 nothing on the request path may

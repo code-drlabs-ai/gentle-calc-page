@@ -25,5 +25,5 @@ param auth0Audience = readEnvironmentVariable('AUTH0_AUDIENCE')
 
 param wafMode = 'Prevention'
 param apiRateLimitPerMinute = 600
-param frontDoorSku = 'Premium_AzureFrontDoor'
+param frontDoorSku = 'Standard_AzureFrontDoor'
 param staticWebAppSku = 'Standard'

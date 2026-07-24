@@ -123,6 +123,12 @@ async function main() {
         route: `/${SHELL}`,
         headers: { "Cache-Control": "no-cache, no-store, must-revalidate" },
       },
+      {
+        // index.html is emitted below as a copy of the shell to satisfy the SWA deploy's
+        // required default document; keep it uncached for the same reason as the shell.
+        route: "/index.html",
+        headers: { "Cache-Control": "no-cache, no-store, must-revalidate" },
+      },
     ],
     responseOverrides: {
       404: { rewrite: `/${SHELL}`, statusCode: 200 },
@@ -132,7 +138,18 @@ async function main() {
   const target = join(OUT_DIR, "staticwebapp.config.json");
   await writeFile(target, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
+  // StaticSitesClient (used by both the SWA CLI and the GitHub Action) requires a default
+  // document named index.html at the app root, and it checks for this BEFORE consulting
+  // navigationFallback. TanStack Start's prerender emits only _shell.html, so without an
+  // index.html the deploy aborts with "Failed to find a default file in the app artifacts
+  // folder". Emit index.html as a byte-for-byte copy of the shell: navigationFallback still
+  // rewrites deep links to /_shell.html and the two documents are identical, so runtime
+  // behaviour (and the CSP hash on the inline shell scripts) is unchanged.
+  const indexTarget = join(OUT_DIR, "index.html");
+  await writeFile(indexTarget, await readFile(join(OUT_DIR, SHELL), "utf8"), "utf8");
+
   console.log(`[swa-config] wrote ${target}`);
+  console.log(`[swa-config] wrote ${indexTarget} (copy of ${SHELL})`);
   console.log(`[swa-config] env=${appEnv} inline-script-hashes=${scriptHashes.length}`);
   console.log(
     `[swa-config] connect-src: auth0=${auth0Origin ?? "(none)"} supabase=${supabaseOrigin ?? "(none)"}`,

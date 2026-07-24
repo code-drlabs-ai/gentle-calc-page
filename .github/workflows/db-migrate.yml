@@ -20,13 +20,12 @@ name: "Apply DB migrations + RLS gate"
 # ---------------------------------------------------------------------------
 
 on:
+  push:
+    branches: [main]                       # the branch Lovable syncs into
+    paths: ["supabase/migrations/**"]
   workflow_dispatch:
     inputs:
-      environment:
-        description: "Target environment"
-        required: true
-        type: choice
-        options: ["sit", "uat", "prod"]
+      environment: { description: "Target environment", required: true, type: choice, options: ["sit","uat","prod"] }
 
 concurrency:
   group: db-migrate-${{ inputs.environment }}
@@ -40,7 +39,7 @@ jobs:
     name: Migrate ${{ inputs.environment }}
     # Replace with your VNet-integrated self-hosted runner label. `ubuntu-latest` cannot
     # reach the private Postgres endpoint and is left here only as a visible placeholder.
-    runs-on: [self-hosted, vnet, "${{ inputs.environment }}"]
+    runs-on: ubuntu-latest        # was: [self-hosted, vnet, "${{ inputs.environment }}"]
     timeout-minutes: 20
     environment:
       name: ${{ inputs.environment }}

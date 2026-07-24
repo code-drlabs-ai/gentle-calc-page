@@ -57,9 +57,11 @@ jobs:
           AUTH0_JWKS: ${{ secrets.AUTH0_JWKS }}
           AUTH0_AUDIENCE: ${{ vars.VITE_AUTH0_AUDIENCE }}
         run: |
+          # With a .bicepparam, the template comes from its `using` line — do NOT also pass
+          # --template-file (Azure CLI rejects specifying both).
           az deployment group what-if \
             --resource-group "rg-gentlecalc-${{ inputs.environment }}" \
-            --template-file infra/bicep/main.bicep \
+            --name "gentlecalc-${{ inputs.environment }}" \
             --parameters "infra/bicep/env/${{ inputs.environment }}.bicepparam"
 
       - name: Deploy
@@ -71,5 +73,5 @@ jobs:
         run: |
           az deployment group create \
             --resource-group "rg-gentlecalc-${{ inputs.environment }}" \
-            --template-file infra/bicep/main.bicep \
+            --name "gentlecalc-${{ inputs.environment }}" \
             --parameters "infra/bicep/env/${{ inputs.environment }}.bicepparam"
